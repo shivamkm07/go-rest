@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 )
 
 type Article struct {
@@ -81,6 +81,38 @@ func deleteArticle(w http.ResponseWriter, r *http.Request) {
 
 }
 
+type Command struct {
+	Id      int `json:"id"`
+	Method   string `json:"method"`
+}
+func profile(w http.ResponseWriter, r *http.Request){
+	var Dialer websocket.Dialer
+	ws, _, _ := Dialer.Dial("ws://127.0.0.1:9229/a12ec86c-f4ee-4b4f-b28f-8322ec50da8d", nil)
+	var profileEnableCommand = &Command{
+		Id: 1,
+		Method: "Profiler.enable"}
+	res, _ := json.Marshal(profileEnableCommand)
+	ws.WriteMessage(websocket.TextMessage, []byte(res))
+	_, message, _ := ws.ReadMessage()
+	fmt.Fprintf(w, string(message))
+	var profileStartCommand = &Command{
+		Id: 2,
+		Method: "Profiler.start"}
+	res2, _ := json.Marshal(profileStartCommand)
+	ws.WriteMessage(websocket.TextMessage, []byte(res2))
+	_, message2, _ := ws.ReadMessage()
+	fmt.Fprintf(w, string(message2))
+	var profileStopCommand = &Command{
+		Id: 3,
+		Method: "Profiler.stop"}
+	res3, _ := json.Marshal(profileStopCommand)
+	ws.WriteMessage(websocket.TextMessage, []byte(res3))
+	_, message3, _ := ws.ReadMessage()
+	fmt.Fprintf(w, string(message3))	
+	ws.Close()
+	// fmt.Fprintf(w, string(res))
+}
+
 func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 	myRouter.HandleFunc("/", homePage)
@@ -90,6 +122,7 @@ func handleRequests() {
 	myRouter.HandleFunc("/article/{id}", returnSingleArticle)
 	myRouter.HandleFunc("/article", createNewArticle).Methods("POST")
 	myRouter.HandleFunc("/article/{id}", deleteArticle).Methods("DELETE")
+	myRouter.HandleFunc("/profiles", profile)
 	log.Fatal(http.ListenAndServe(":8080", myRouter))
 }
 
