@@ -6,8 +6,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-
+	"os/exec"
+	"os"
+	"path/filepath"
+	"regexp"
 	"github.com/gorilla/mux"
+	"time"
 )
 
 type Article struct {
@@ -21,6 +25,8 @@ type Article struct {
 // that we can then populate in our main function
 // to simulate a database
 var Articles []Article
+
+var app_dir string = "/home/shivamkm07/codes/example-node-js-app"
 
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Welcome to the HomePage!")
@@ -81,6 +87,50 @@ func deleteArticle(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func find_file(regex string, dir string) string{
+
+	re := regexp.MustCompile(regex);
+	var file string
+	
+	walk := func(fn string, fi os.FileInfo, err error) error {
+		if re.MatchString(fn) == false {
+			return nil
+		}
+		file = fn
+		return nil
+	}
+	filepath.Walk(dir, walk)
+	return file
+
+}
+func handleNodeServer(w http.ResponseWriter, r *http.Request){
+	vars := mux.Vars(r)
+	pid := vars["pid"]
+	app := "kill"
+	a0 := "-USR2"
+	a1 := pid
+
+    cmd := exec.Command(app,a0,a1)
+    stdout, err := cmd.Output()
+
+    if err != nil {
+        fmt.Println(err.Error())
+        return
+    }
+    fmt.Println(string(stdout))
+	file := find_file(`.*snapshot` , app_dir )
+	fmt.Printf(file)
+	time.Sleep(time.Second)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	http.ServeFile(w, r, file)
+
+	e := os.Remove(file)
+    if e != nil {
+        log.Fatal(e)
+    }
+
+}
+
 func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
 	myRouter.HandleFunc("/", homePage)
@@ -90,6 +140,7 @@ func handleRequests() {
 	myRouter.HandleFunc("/article/{id}", returnSingleArticle)
 	myRouter.HandleFunc("/article", createNewArticle).Methods("POST")
 	myRouter.HandleFunc("/article/{id}", deleteArticle).Methods("DELETE")
+	myRouter.HandleFunc("/server/node/{pid}",handleNodeServer)
 	log.Fatal(http.ListenAndServe(":8080", myRouter))
 }
 
