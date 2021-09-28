@@ -3,16 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os/exec"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"time"
-	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 )
 
 type Article struct {
@@ -88,11 +88,11 @@ func deleteArticle(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func find_file(regex string, dir string) string{
+func find_file(regex string, dir string) string {
 
-	re := regexp.MustCompile(regex);
+	re := regexp.MustCompile(regex)
 	var file string
-	
+
 	walk := func(fn string, fi os.FileInfo, err error) error {
 		if re.MatchString(fn) == false {
 			return nil
@@ -104,61 +104,90 @@ func find_file(regex string, dir string) string{
 	return file
 
 }
-func handleNodeServer(w http.ResponseWriter, r *http.Request){
+func handleNodeServer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	pid := vars["pid"]
 	app := "kill"
 	a0 := "-USR2"
 	a1 := pid
 
-    cmd := exec.Command(app,a0,a1)
-    stdout, err := cmd.Output()
+	cmd := exec.Command(app, a0, a1)
+	stdout, err := cmd.Output()
 
-    if err != nil {
-        fmt.Println(err.Error())
-        return
-    }
-    fmt.Println(string(stdout))
-	file := find_file(`.*snapshot` , app_dir )
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	fmt.Println(string(stdout))
+	file := find_file(`.*snapshot`, app_dir)
 	fmt.Printf(file)
 	time.Sleep(time.Second)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	http.ServeFile(w, r, file)
 
 	e := os.Remove(file)
-    if e != nil {
-        log.Fatal(e)
-    }
+	if e != nil {
+		log.Fatal(e)
+	}
+}
+
+func getPidNodeJs(pid string) string {
+	output, _ := exec.Command("kill", "-usr1", pid).Output()
+	return string(output[:])
+}
+
+func getPid(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	pid := vars["pid"]
+	fmt.Fprintf(w, string(getPidNodeJs(pid)))
+}
+
+type DebuggerInfo struct {
+	WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
+}
+
+func getDebugPath() string {
+	resp, err := http.Get("http://127.0.0.1:9229/json")
+	if err != nil {
+		panic(err)
+	}
+	body, _ := ioutil.ReadAll(resp.Body)
+	debuggerInfos := []DebuggerInfo{}
+	json.Unmarshal(body, &debuggerInfos)
+	return debuggerInfos[0].WebSocketDebuggerUrl
 }
 
 type Command struct {
-	Id      int `json:"id"`
-	Method   string `json:"method"`
+	Id     int    `json:"id"`
+	Method string `json:"method"`
 }
-func profile(w http.ResponseWriter, r *http.Request){
+
+func profile(w http.ResponseWriter, r *http.Request) {
 	var Dialer websocket.Dialer
-	ws, _, _ := Dialer.Dial("ws://127.0.0.1:9229/a12ec86c-f4ee-4b4f-b28f-8322ec50da8d", nil)
+	// TODO: send debuger signal
+	// TODO: get socket information
+	ws, _, _ := Dialer.Dial(getDebugPath(), nil)
 	var profileEnableCommand = &Command{
-		Id: 1,
+		Id:     1,
 		Method: "Profiler.enable"}
 	res, _ := json.Marshal(profileEnableCommand)
 	ws.WriteMessage(websocket.TextMessage, []byte(res))
 	_, message, _ := ws.ReadMessage()
 	fmt.Fprintf(w, string(message))
 	var profileStartCommand = &Command{
-		Id: 2,
+		Id:     2,
 		Method: "Profiler.start"}
 	res2, _ := json.Marshal(profileStartCommand)
 	ws.WriteMessage(websocket.TextMessage, []byte(res2))
 	_, message2, _ := ws.ReadMessage()
 	fmt.Fprintf(w, string(message2))
 	var profileStopCommand = &Command{
-		Id: 3,
+		Id:     3,
 		Method: "Profiler.stop"}
 	res3, _ := json.Marshal(profileStopCommand)
 	ws.WriteMessage(websocket.TextMessage, []byte(res3))
 	_, message3, _ := ws.ReadMessage()
-	fmt.Fprintf(w, string(message3))	
+	fmt.Fprintf(w, string(message3))
 	ws.Close()
 	// fmt.Fprintf(w, string(res))
 }
@@ -172,8 +201,9 @@ func handleRequests() {
 	myRouter.HandleFunc("/article/{id}", returnSingleArticle)
 	myRouter.HandleFunc("/article", createNewArticle).Methods("POST")
 	myRouter.HandleFunc("/article/{id}", deleteArticle).Methods("DELETE")
-	myRouter.HandleFunc("/server/node/{pid}",handleNodeServer)
+	myRouter.HandleFunc("/server/node/{pid}", handleNodeServer)
 	myRouter.HandleFunc("/profiles", profile)
+	myRouter.HandleFunc("/pid/{pid}", getPid)
 	log.Fatal(http.ListenAndServe(":8080", myRouter))
 }
 
